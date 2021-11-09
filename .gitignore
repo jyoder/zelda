@@ -1,8 +1,32 @@
-# Dependencies
-.psci_modules
+.cache
+.DS_Store
+.envrc
+.idea
+.psa*
+.psc-package
+.psc*
+.pulp-cache
+.purs*
+!.purs-repl
+.spago
+*.dyn_hi
+*.dyn_o
+*.hi
+*.iml
+*.o
+bin
 bower_components
+build
+Config/client_session_key.aes
+del
+dist
+gen
+Generated
+generated-docs
 node_modules
-
-# Generated files
-.psci
 output
+prod
+result
+static/halogen/index.*
+static/prod.*
+tmp

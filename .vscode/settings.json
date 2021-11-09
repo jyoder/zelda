@@ -1,0 +1,4 @@
+{
+"purescript.outputDirectory": "static/halogen/output/",
+"nixEnvSelector.nixFile": "${workspaceRoot}/default.nix"
+}
