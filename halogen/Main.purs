@@ -7,22 +7,40 @@ import Effect (Effect)
 import Effect.Exception (error)
 import Graphics.Canvas (Context2D, CanvasElement, getContext2D, getCanvasElementById, fillRect)
 import Web.HTML (window)
-import Web.HTML.Window (Window, requestAnimationFrame)
+import Web.HTML.Window (Window, requestAnimationFrame, document, toEventTarget)
 import Effect.Class.Console (log)
+import Web.Event.EventTarget (eventListener, addEventListener)
+import Web.UIEvent.KeyboardEvent.EventTypes (keydown)
 
 type Game
   = { x :: Number
     , y :: Number
     }
 
-data Controller
-  = Controller
+type Controller
+  = { up :: ButtonPosition
+    , down :: ButtonPosition
+    , left :: ButtonPosition
+    , right :: ButtonPosition
+    }
+
+data ButtonPosition
+  = UpPosition
+  | DownPosition
 
 main :: Effect Unit
 main = do
   window <- window
-  canvas <- selectCanvas "canvas" "Could not find canvas (#canvas)."
+  document <- document window
+  canvas <- selectCanvas "game-canvas" "Could not find game canvas (#game-canvas)."
   context <- getContext2D canvas
+  listener <-
+    eventListener
+      ( \_ -> do
+          log "Captured event!"
+          pure unit
+      )
+  addEventListener keydown listener false (toEventTarget window)
   tick window canvas context initialGame
   pure unit
 
@@ -33,6 +51,14 @@ selectCanvas id errorMessage = do
 
 initialGame :: Game
 initialGame = { x: 0.0, y: 0.0 }
+
+defaultController :: Controller
+defaultController =
+  { up: UpPosition
+  , down: UpPosition
+  , left: UpPosition
+  , right: UpPosition
+  }
 
 tick :: Window -> CanvasElement -> Context2D -> Game -> Effect Unit
 tick window canvas context game = do
@@ -53,7 +79,7 @@ render context game = do
   fillRect context { x: game.x, y: game.y, width: 50.0, height: 50.0 }
 
 readController :: Effect Controller
-readController = pure Controller
+readController = pure defaultController
 
 performUpdate :: Controller -> Game -> Maybe Game
 performUpdate controller game =

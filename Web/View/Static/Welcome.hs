@@ -7,5 +7,5 @@ data WelcomeView = WelcomeView
 instance View WelcomeView where
     html WelcomeView =
         [hsx|
-            <canvas id="canvas" style="background-color: blue;"></canvas>
+            <canvas id="game-canvas" style="background-color: blue;"></canvas>
         |]
