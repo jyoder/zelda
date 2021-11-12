@@ -14,6 +14,7 @@ let
             p.ihp
         ];
         otherDeps = p: with p; [
+            cacert
             git
             nodejs
             purescript
