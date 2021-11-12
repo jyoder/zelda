@@ -24,5 +24,5 @@ include ${IHP}/Makefile.dist
 
 static/halogen/index.js:
 	HOME=/tmp npm ci
-	HOME=/tmp spago build --purs-args "--output static/halogen/output" --source-maps --then "npm run bundle"
+	HOME=/tmp spago build --purs-args "--output static/halogen/output" --source-maps
 	esbuild static/halogen/main.js --bundle --outfile=static/halogen/index.js --minify --sourcemap
