@@ -21,3 +21,6 @@ JS_FILES += ${IHP}/static/vendor/turbolinksMorphdom.js
 JS_FILES += static/halogen/index.js
 
 include ${IHP}/Makefile.dist
+
+static/halogen/index.js:
+	HOME=/tmp npm run build
