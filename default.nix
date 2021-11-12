@@ -14,6 +14,8 @@ let
             p.ihp
         ];
         otherDeps = p: with p; [
+            nodejs
+            purescript
         ];
         projectPath = ./.;
     };

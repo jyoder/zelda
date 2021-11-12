@@ -23,4 +23,5 @@ JS_FILES += static/halogen/index.js
 include ${IHP}/Makefile.dist
 
 static/halogen/index.js:
-	HOME=/tmp npm run build
+	HOME=/tmp npm install
+	npm run build
