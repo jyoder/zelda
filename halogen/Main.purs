@@ -31,12 +31,12 @@ type GameContext
 type Game
   = { time :: Time
     , viewPort :: Boundary
-    , player :: Body
+    , player :: Character
     }
 
-type Boundary
-  = { location :: Location
-    , dimensions :: Dimensions
+type Character
+  = { body :: Body
+    , movement :: Movement
     }
 
 type Body
@@ -45,9 +45,23 @@ type Body
     , force :: Vector
     }
 
-type Matrix2x1
-  = { x :: Number
-    , y :: Number
+data Movement
+  = Movement Direction
+  | NoMovement
+
+data Direction
+  = North
+  | NorthEast
+  | East
+  | SouthEast
+  | South
+  | SouthWest
+  | West
+  | NorthWest
+
+type Boundary
+  = { location :: Location
+    , dimensions :: Dimensions
     }
 
 type Location
@@ -61,22 +75,27 @@ type Dimensions
 type Vector
   = Matrix2x1
 
-type Controller
-  = { up :: ButtonPosition
-    , down :: ButtonPosition
-    , left :: ButtonPosition
-    , right :: ButtonPosition
+type Matrix2x1
+  = { x :: Number
+    , y :: Number
     }
 
-data ButtonPosition
-  = UpPosition
-  | DownPosition
+type Controller
+  = { up :: ButtonState
+    , down :: ButtonState
+    , left :: ButtonState
+    , right :: ButtonState
+    }
+
+data ButtonState
+  = NotPressed
+  | Pressed
 
 type GameAssets
   = { playerImage :: CanvasImageSource
     }
 
-derive instance eqButtonPosition :: Eq ButtonPosition
+derive instance eqButtonPosition :: Eq ButtonState
 
 main :: Effect Unit
 main = do
@@ -93,55 +112,21 @@ makeGameContext canvasId viewPortDimensions = do
   context2d <- getContext2D canvas
   controllerRef <- new initialController
   setCanvasDimensions canvas viewPortDimensions
-  keydownListener <- eventListener (handleControllerEvent DownPosition controllerRef)
-  keyupListener <- eventListener (handleControllerEvent UpPosition controllerRef)
+  keydownListener <- eventListener (handleControllerEvent Pressed controllerRef)
+  keyupListener <- eventListener (handleControllerEvent NotPressed controllerRef)
   addEventListener keydown keydownListener false (toEventTarget window)
   addEventListener keyup keyupListener false (toEventTarget window)
   pure { window, canvas, context2d, controllerRef }
-
-loadGameAssets :: Aff GameAssets
-loadGameAssets = do
-  playerImage <- loadImage "https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/b91ae6af-3261-4f95-990e-4896507279ad/d5jzig1-3bd05d51-8646-443c-9030-600bd5eaf473.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiJcL2ZcL2I5MWFlNmFmLTMyNjEtNGY5NS05OTBlLTQ4OTY1MDcyNzlhZFwvZDVqemlnMS0zYmQwNWQ1MS04NjQ2LTQ0M2MtOTAzMC02MDBiZDVlYWY0NzMucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.js96fjW1bMXaPF6fzpgHOc6xbsL7CsSqU1Nit2OEGwA"
-  pure { playerImage }
 
 selectCanvas :: String -> String -> Effect CanvasElement
 selectCanvas id errorMessage = do
   maybeCanvas <- getCanvasElementById id
   maybe (throwError (error errorMessage)) pure maybeCanvas
 
-initialGame :: Time -> Game
-initialGame time =
-  { time
-  , viewPort: initialViewPort
-  , player: initialPlayerBody
-  }
-
-initialViewPort :: Boundary
-initialViewPort =
-  { location: { x: 0.0, y: 0.0 }
-  , dimensions: defaultViewPortDimensions
-  }
-
-defaultViewPortDimensions :: Dimensions
-defaultViewPortDimensions = { width: 900.0, height: 600.0 }
-
-initialPlayerBody :: Body
-initialPlayerBody =
-  { boundary:
-      { location: { x: 0.0, y: 0.0 }
-      , dimensions: { width: 50.0, height: 50.0 }
-      }
-  , velocity: { x: 0.0, y: 0.0 }
-  , force: { x: 0.0, y: 0.0 }
-  }
-
-initialController :: Controller
-initialController =
-  { up: UpPosition
-  , down: UpPosition
-  , left: UpPosition
-  , right: UpPosition
-  }
+loadGameAssets :: Aff GameAssets
+loadGameAssets = do
+  playerImage <- loadImage "https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/b91ae6af-3261-4f95-990e-4896507279ad/d5jzig1-3bd05d51-8646-443c-9030-600bd5eaf473.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiJcL2ZcL2I5MWFlNmFmLTMyNjEtNGY5NS05OTBlLTQ4OTY1MDcyNzlhZFwvZDVqemlnMS0zYmQwNWQ1MS04NjQ2LTQ0M2MtOTAzMC02MDBiZDVlYWY0NzMucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.js96fjW1bMXaPF6fzpgHOc6xbsL7CsSqU1Nit2OEGwA"
+  pure { playerImage }
 
 loadImage :: String -> Aff CanvasImageSource
 loadImage url = do
@@ -162,27 +147,58 @@ loadImage url = do
     Right image -> pure image
     Left error -> throwError error
 
-handleControllerEvent :: ButtonPosition -> Ref Controller -> Event -> Effect Unit
-handleControllerEvent buttonPosition controllerRef event = case fromEvent event of
-  Just keyboardEvent -> modify_ (updateController buttonPosition keyboardEvent) controllerRef
+initialGame :: Time -> Game
+initialGame time =
+  { time
+  , viewPort: initialViewPort
+  , player: initialPlayer
+  }
+
+initialViewPort :: Boundary
+initialViewPort =
+  { location: { x: 0.0, y: 0.0 }
+  , dimensions: defaultViewPortDimensions
+  }
+
+defaultViewPortDimensions :: Dimensions
+defaultViewPortDimensions = { width: 900.0, height: 600.0 }
+
+initialPlayer :: Character
+initialPlayer =
+  { body: initialPlayerBody
+  , movement: NoMovement
+  }
+
+initialPlayerBody :: Body
+initialPlayerBody =
+  { boundary:
+      { location: { x: 0.0, y: 0.0 }
+      , dimensions: { width: 50.0, height: 50.0 }
+      }
+  , velocity: { x: 0.0, y: 0.0 }
+  , force: { x: 0.0, y: 0.0 }
+  }
+
+initialController :: Controller
+initialController =
+  { up: NotPressed
+  , down: NotPressed
+  , left: NotPressed
+  , right: NotPressed
+  }
+
+handleControllerEvent :: ButtonState -> Ref Controller -> Event -> Effect Unit
+handleControllerEvent buttonState controllerRef event = case fromEvent event of
+  Just keyboardEvent -> modify_ (updateController buttonState keyboardEvent) controllerRef
   Nothing -> pure unit
 
-updateController :: ButtonPosition -> KeyboardEvent -> Controller -> Controller
-updateController buttonPosition keyboardEvent controller = case code keyboardEvent of
-  "ArrowUp" -> controller { up = buttonPosition }
-  "ArrowDown" -> controller { down = buttonPosition }
-  "ArrowLeft" -> controller { left = buttonPosition }
-  "ArrowRight" -> controller { right = buttonPosition }
+updateController :: ButtonState -> KeyboardEvent -> Controller -> Controller
+updateController buttonState keyboardEvent controller = case code keyboardEvent of
+  "ArrowUp" -> controller { up = buttonState }
+  "ArrowDown" -> controller { down = buttonState }
+  "ArrowLeft" -> controller { left = buttonState }
+  "ArrowRight" -> controller { right = buttonState }
   _ -> controller
-
-readController :: Ref Controller -> Aff Controller
-readController controllerRef =
-  makeAff
-    ( \callback -> do
-        controller <- read controllerRef
-        callback $ Right controller
-        mempty
-    )
 
 requestNextFrame :: GameContext -> GameAssets -> Game -> Aff Unit
 requestNextFrame gameContext gameAssets game = do
@@ -197,7 +213,7 @@ run gameContext gameAssets game = do
   controller <- readController gameContext.controllerRef
   time <- liftEffect nowTime
   let
-    maybeGame = performUpdate time controller game
+    maybeGame = updateGame time controller game
   case maybeGame of
     Just game' -> do
       requestNextFrame gameContext gameAssets game'
@@ -206,62 +222,60 @@ run gameContext gameAssets game = do
       log "Game ended"
       pure unit
 
-render :: GameContext -> GameAssets -> Game -> Aff Unit
-render gameContext gameAssets game =
-  let
-    player = game.player
-  in
-    liftEffect do
-      clearArea gameContext.context2d game.viewPort
-      ( drawImageScale
-          gameContext.context2d
-          gameAssets.playerImage
-          player.boundary.location.x
-          player.boundary.location.y
-          player.boundary.dimensions.width
-          player.boundary.dimensions.height
-      )
+readController :: Ref Controller -> Aff Controller
+readController controllerRef =
+  makeAff
+    ( \callback -> do
+        controller <- read controllerRef
+        callback $ Right controller
+        mempty
+    )
 
-clearArea :: Context2D -> Boundary -> Effect Unit
-clearArea context boundary = do
-  setFillStyle context "white"
-  fillRect context
-    { x: boundary.location.x
-    , y: boundary.location.y
-    , width: boundary.dimensions.width
-    , height: boundary.dimensions.height
-    }
-
-performUpdate :: Time -> Controller -> Game -> Maybe Game
-performUpdate time controller game =
+updateGame :: Time -> Controller -> Game -> Maybe Game
+updateGame time controller game =
   game
-    # performControls controller
+    # applyControls controller
     # performAi
     # performPhysics time
-    # updateTime time
     # performRules
+    # updateTime time
+    # evaluateGameEnd
 
-performControls :: Controller -> Game -> Game
-performControls controller game =
+applyControls :: Controller -> Game -> Game
+applyControls controller game =
   game
     { player
-      { force
-        { x = toForce controller.left controller.right
-        , y = toForce controller.up controller.down
-        }
+      { movement = controllerToMovement controller
       }
     }
-  where
-  toForce UpPosition UpPosition = 0.0
 
-  toForce UpPosition DownPosition = 600.0
+controllerToMovement :: Controller -> Movement
+controllerToMovement { up: Pressed, right: NotPressed, down: NotPressed, left: NotPressed } = Movement North
 
-  toForce DownPosition DownPosition = 0.0
+controllerToMovement { up: Pressed, right: Pressed, down: NotPressed, left: NotPressed } = Movement NorthEast
 
-  toForce DownPosition UpPosition = -600.0
+controllerToMovement { up: NotPressed, right: Pressed, down: NotPressed, left: NotPressed } = Movement East
+
+controllerToMovement { up: NotPressed, right: Pressed, down: Pressed, left: NotPressed } = Movement SouthEast
+
+controllerToMovement { up: NotPressed, right: NotPressed, down: Pressed, left: NotPressed } = Movement South
+
+controllerToMovement { up: NotPressed, right: NotPressed, down: Pressed, left: Pressed } = Movement SouthWest
+
+controllerToMovement { up: NotPressed, right: NotPressed, down: NotPressed, left: Pressed } = Movement West
+
+controllerToMovement _ = NoMovement
 
 performAi :: Game -> Game
 performAi game = game
+
+performPhysics :: Time -> Game -> Game
+performPhysics time game =
+  game
+    { player
+      { body = updateBody time game.time game.player.body
+      }
+    }
 
 updateBody :: Time -> Time -> Body -> Body
 updateBody time1 time2 body =
@@ -293,10 +307,68 @@ updateBody time1 time2 body =
 
   mu = 6.0
 
-performPhysics :: Time -> Game -> Game
-performPhysics time game =
+applyForces :: Game -> Game
+applyForces game =
   game
-    { player = updateBody time game.time game.player
+    { player
+      { body
+        { force = movementToForce game.player.movement
+        }
+      }
+    }
+
+movementToForce :: Movement -> Matrix2x1
+movementToForce NoMovement = { x: 0.0, y: 0.0 }
+
+movementToForce (Movement North) = { x: 0.0, y: -600.0 }
+
+movementToForce (Movement NorthEast) = { x: 600.0, y: -600.0 }
+
+movementToForce (Movement East) = { x: 600.0, y: 0.0 }
+
+movementToForce (Movement SouthEast) = { x: 600.0, y: 600.0 }
+
+movementToForce (Movement South) = { x: 0.0, y: 600.0 }
+
+movementToForce (Movement SouthWest) = { x: -600.0, y: 600.0 }
+
+movementToForce (Movement West) = { x: -600.0, y: 0.0 }
+
+movementToForce (Movement NorthWest) = { x: -600.0, y: -600.0 }
+
+performRules :: Game -> Game
+performRules game = game
+
+updateTime :: Time -> Game -> Game
+updateTime time' game = game { time = time' }
+
+evaluateGameEnd :: Game -> Maybe Game
+evaluateGameEnd game = Just game
+
+render :: GameContext -> GameAssets -> Game -> Aff Unit
+render gameContext gameAssets game =
+  let
+    player = game.player
+  in
+    liftEffect do
+      clearArea gameContext.context2d game.viewPort
+      ( drawImageScale
+          gameContext.context2d
+          gameAssets.playerImage
+          player.body.boundary.location.x
+          player.body.boundary.location.y
+          player.body.boundary.dimensions.width
+          player.body.boundary.dimensions.height
+      )
+
+clearArea :: Context2D -> Boundary -> Effect Unit
+clearArea context boundary = do
+  setFillStyle context "white"
+  fillRect context
+    { x: boundary.location.x
+    , y: boundary.location.y
+    , width: boundary.dimensions.width
+    , height: boundary.dimensions.height
     }
 
 addMatrix2x1 :: Matrix2x1 -> Matrix2x1 -> Matrix2x1
@@ -308,9 +380,3 @@ elapsedSeconds time1 time2 =
     (Seconds seconds) = diff time1 time2
   in
     seconds
-
-updateTime :: Time -> Game -> Game
-updateTime time' game = game { time = time' }
-
-performRules :: Game -> Maybe Game
-performRules game = Just game

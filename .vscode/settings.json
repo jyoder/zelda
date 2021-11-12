@@ -1,4 +1,6 @@
 {
-"purescript.outputDirectory": "static/halogen/output/",
-"nixEnvSelector.nixFile": "${workspaceRoot}/default.nix"
+    "purescript.outputDirectory": "static/halogen/output/",
+    "nixEnvSelector.nixFile": "${workspaceRoot}/default.nix",
+    "purescript.pursExe": "/nix/store/vd4xvx67kx9czrv2x35vnz9fz0kyq23p-purescript-0.14.4/bin/purs",
+    "purescript.buildCommand": "/nix/store/l078vmg8z0g50yljwq8n7n2fsvhv93qh-spago-0.20.2/bin/spago build --purs-args --json-errors"
 }
