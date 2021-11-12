@@ -7,7 +7,6 @@
     },
     "devDependencies": {
         "concurrently": "^5.3.0",
-        "esbuild": "^0.8.41",
         "parcel": "^1.12.4"
     }
 }

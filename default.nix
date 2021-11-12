@@ -15,6 +15,7 @@ let
         ];
         otherDeps = p: with p; [
             cacert
+            esbuild
             git
             nodejs
             purescript
