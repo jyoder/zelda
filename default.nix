@@ -16,6 +16,7 @@ let
         otherDeps = p: with p; [
             nodejs
             purescript
+            spago
         ];
         projectPath = ./.;
     };
