@@ -14,6 +14,7 @@ let
             p.ihp
         ];
         otherDeps = p: with p; [
+            git
             nodejs
             purescript
             spago
