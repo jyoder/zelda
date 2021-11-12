@@ -41,7 +41,7 @@ scripts :: Html
 scripts =
     [hsx|
         <script id="livereload-script" src="/livereload.js"></script>
-        <script src="/vendor/jquery-3.2.1.slim.min.js"></script>
+        <script src="/vendor/jquery-3.6.0.slim.min.js"></script>
         <script src="/vendor/timeago.js"></script>
         <script src="/vendor/popper.min.js"></script>
         <script src="/vendor/bootstrap.min.js"></script>
