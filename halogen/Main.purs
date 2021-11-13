@@ -2,24 +2,26 @@ module Main where
 
 import Prelude
 import Control.Monad.Error.Class (throwError)
+import Data.Array (length, index)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Time (Time, diff)
 import Data.Time.Duration (Seconds(..))
 import Effect (Effect)
-import Effect.Ref (Ref, new, modify_, read)
-import Web.Event.Internal.Types (Event)
-import Effect.Exception (error)
-import Web.UIEvent.KeyboardEvent (KeyboardEvent, fromEvent, code)
-import Graphics.Canvas (Context2D, CanvasElement, getContext2D, getCanvasElementById, fillRect, setCanvasDimensions, tryLoadImage, CanvasImageSource, setFillStyle, drawImageScale)
-import Web.HTML (window)
-import Web.HTML.Window (Window, requestAnimationFrame, toEventTarget)
-import Effect.Class.Console (log)
-import Web.Event.EventTarget (eventListener, addEventListener)
-import Web.UIEvent.KeyboardEvent.EventTypes (keydown, keyup)
 import Effect.Aff (Aff, makeAff, attempt, launchAff_)
 import Effect.Class (liftEffect)
+import Effect.Class.Console (log)
+import Effect.Exception (error)
 import Effect.Now (nowTime)
+import Effect.Ref (Ref, new, modify_, read)
+import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImageScale, fillRect, getCanvasElementById, getContext2D, setCanvasDimensions, setFillStyle, tryLoadImage)
+import Web.Event.EventTarget (eventListener, addEventListener)
+import Web.Event.Internal.Types (Event)
+import Web.HTML (window)
+import Web.HTML.Window (Window, requestAnimationFrame, toEventTarget)
+import Web.UIEvent.KeyboardEvent (KeyboardEvent, fromEvent, code)
+import Web.UIEvent.KeyboardEvent.EventTypes (keydown, keyup)
+import Data.Int (floor)
 
 type GameContext
   = { window :: Window
@@ -37,6 +39,7 @@ type Game
 type Character
   = { body :: Body
     , movement :: Movement
+    , animation :: Animation
     }
 
 type Body
@@ -92,7 +95,17 @@ data ButtonState
   | Pressed
 
 type GameAssets
-  = { playerImage :: CanvasImageSource
+  = { playerSprite :: Sprite
+    }
+
+type Animation
+  = { startedAt :: Time
+    , frameRate :: Number
+    }
+
+type Sprite
+  = { frameRate :: Number
+    , images :: Array CanvasImageSource
     }
 
 derive instance eqButtonPosition :: Eq ButtonState
@@ -125,8 +138,13 @@ selectCanvas id errorMessage = do
 
 loadGameAssets :: Aff GameAssets
 loadGameAssets = do
-  playerImage <- loadImage "https://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/b91ae6af-3261-4f95-990e-4896507279ad/d5jzig1-3bd05d51-8646-443c-9030-600bd5eaf473.png?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7InBhdGgiOiJcL2ZcL2I5MWFlNmFmLTMyNjEtNGY5NS05OTBlLTQ4OTY1MDcyNzlhZFwvZDVqemlnMS0zYmQwNWQ1MS04NjQ2LTQ0M2MtOTAzMC02MDBiZDVlYWY0NzMucG5nIn1dXSwiYXVkIjpbInVybjpzZXJ2aWNlOmZpbGUuZG93bmxvYWQiXX0.js96fjW1bMXaPF6fzpgHOc6xbsL7CsSqU1Nit2OEGwA"
-  pure { playerImage }
+  playerImage1 <- loadImage "/sprites/player-not-moving-000.png"
+  playerImage2 <- loadImage "/sprites/player-not-moving-001.png"
+  pure
+    { playerSprite:
+        { images: [ playerImage1, playerImage1, playerImage1, playerImage1, playerImage1, playerImage1, playerImage2 ], frameRate: 2.0
+        }
+    }
 
 loadImage :: String -> Aff CanvasImageSource
 loadImage url = do
@@ -151,7 +169,7 @@ initialGame :: Time -> Game
 initialGame time =
   { time
   , viewPort: initialViewPort
-  , player: initialPlayer
+  , player: initialPlayer time
   }
 
 initialViewPort :: Boundary
@@ -163,10 +181,11 @@ initialViewPort =
 defaultViewPortDimensions :: Dimensions
 defaultViewPortDimensions = { width: 900.0, height: 600.0 }
 
-initialPlayer :: Character
-initialPlayer =
+initialPlayer :: Time -> Character
+initialPlayer time =
   { body: initialPlayerBody
   , movement: NoMovement
+  , animation: startAnimation time 2.0
   }
 
 initialPlayerBody :: Body
@@ -236,6 +255,7 @@ updateGame time controller game =
   game
     # applyControls controller
     # performAi
+    # applyForces
     # performPhysics time
     # performRules
     # updateTime time
@@ -347,19 +367,34 @@ evaluateGameEnd game = Just game
 
 render :: GameContext -> GameAssets -> Game -> Aff Unit
 render gameContext gameAssets game =
-  let
-    player = game.player
-  in
-    liftEffect do
-      clearArea gameContext.context2d game.viewPort
-      ( drawImageScale
-          gameContext.context2d
-          gameAssets.playerImage
-          player.body.boundary.location.x
-          player.body.boundary.location.y
-          player.body.boundary.dimensions.width
-          player.body.boundary.dimensions.height
-      )
+  liftEffect do
+    clearArea gameContext.context2d game.viewPort
+    renderSprite
+      gameContext.context2d
+      game.time
+      game.player.body
+      game.player.animation
+      gameAssets.playerSprite
+
+renderSprite :: Context2D -> Time -> Body -> Animation -> Sprite -> Effect Unit
+renderSprite context2d time body animation sprite = case maybeCurrentImage of
+  Just currentImage ->
+    drawImageScale
+      context2d
+      currentImage
+      body.boundary.location.x
+      body.boundary.location.y
+      body.boundary.dimensions.width
+      body.boundary.dimensions.height
+  Nothing -> pure unit
+  where
+  maybeCurrentImage = index sprite.images currentFrame
+
+  currentFrame = mod elapsed frameCount
+
+  elapsed = floor $ (elapsedSeconds time animation.startedAt) * animation.frameRate
+
+  frameCount = length sprite.images
 
 clearArea :: Context2D -> Boundary -> Effect Unit
 clearArea context boundary = do
@@ -370,6 +405,9 @@ clearArea context boundary = do
     , width: boundary.dimensions.width
     , height: boundary.dimensions.height
     }
+
+startAnimation :: Time -> Number -> Animation
+startAnimation startedAt frameRate = { startedAt, frameRate }
 
 addMatrix2x1 :: Matrix2x1 -> Matrix2x1 -> Matrix2x1
 addMatrix2x1 m1 m2 = { x: m1.x + m2.x, y: m1.y + m2.y }
