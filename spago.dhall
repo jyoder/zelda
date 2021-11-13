@@ -1,6 +1,7 @@
 { name = "halogen"
 , dependencies =
   [ "aff"
+  , "arrays"
   , "canvas"
   , "console"
   , "datetime"
@@ -8,6 +9,7 @@
   , "either"
   , "exceptions"
   , "halogen"
+  , "integers"
   , "math"
   , "maybe"
   , "now"
