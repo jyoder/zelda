@@ -95,7 +95,11 @@ data ButtonState
   | Pressed
 
 type GameAssets
-  = { playerSprite :: Sprite
+  = { playerAssets :: CharacterAssets
+    }
+
+type CharacterAssets
+  = { standingSprite :: Sprite
     }
 
 type Animation
@@ -141,8 +145,11 @@ loadGameAssets = do
   playerImage1 <- loadImage "/sprites/player-not-moving-000.png"
   playerImage2 <- loadImage "/sprites/player-not-moving-001.png"
   pure
-    { playerSprite:
-        { images: [ playerImage1, playerImage1, playerImage1, playerImage1, playerImage1, playerImage1, playerImage2 ], frameRate: 2.0
+    { playerAssets:
+        { standingSprite:
+            { images: [ playerImage1, playerImage1, playerImage1, playerImage1, playerImage1, playerImage1, playerImage2 ]
+            , frameRate: 2.0
+            }
         }
     }
 
@@ -254,10 +261,10 @@ updateGame :: Time -> Controller -> Game -> Maybe Game
 updateGame time controller game =
   game
     # applyControls controller
-    # performAi
+    # applyAi
     # applyForces
-    # performPhysics time
-    # performRules
+    # applyPhysics time
+    # applyRules
     # updateTime time
     # evaluateGameEnd
 
@@ -286,11 +293,11 @@ controllerToMovement { up: NotPressed, right: NotPressed, down: NotPressed, left
 
 controllerToMovement _ = NoMovement
 
-performAi :: Game -> Game
-performAi game = game
+applyAi :: Game -> Game
+applyAi game = game
 
-performPhysics :: Time -> Game -> Game
-performPhysics time game =
+applyPhysics :: Time -> Game -> Game
+applyPhysics time game =
   game
     { player
       { body = updateBody time game.time game.player.body
@@ -356,8 +363,8 @@ movementToForce (Movement West) = { x: -600.0, y: 0.0 }
 
 movementToForce (Movement NorthWest) = { x: -600.0, y: -600.0 }
 
-performRules :: Game -> Game
-performRules game = game
+applyRules :: Game -> Game
+applyRules game = game
 
 updateTime :: Time -> Game -> Game
 updateTime time' game = game { time = time' }
@@ -369,12 +376,16 @@ render :: GameContext -> GameAssets -> Game -> Aff Unit
 render gameContext gameAssets game =
   liftEffect do
     clearArea gameContext.context2d game.viewPort
-    renderSprite
-      gameContext.context2d
-      game.time
-      game.player.body
-      game.player.animation
-      gameAssets.playerSprite
+    renderPlayer gameContext gameAssets game
+
+renderPlayer :: GameContext -> GameAssets -> Game -> Effect Unit
+renderPlayer gameContext gameAssets game =
+  renderSprite
+    gameContext.context2d
+    game.time
+    game.player.body
+    game.player.animation
+    gameAssets.playerAssets.standingSprite
 
 renderSprite :: Context2D -> Time -> Body -> Animation -> Sprite -> Effect Unit
 renderSprite context2d time body animation sprite = case maybeCurrentImage of
