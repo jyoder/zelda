@@ -142,12 +142,13 @@ selectCanvas id errorMessage = do
 
 loadGameAssets :: Aff GameAssets
 loadGameAssets = do
-  playerImage1 <- loadImage "/sprites/player-not-moving-000.png"
-  playerImage2 <- loadImage "/sprites/player-not-moving-001.png"
+  playerImage1 <- loadImage "/sprites/gillet-standing-000.png"
+  playerImage2 <- loadImage "/sprites/gillet-standing-001.png"
+  playerImage3 <- loadImage "/sprites/gillet-standing-002.png"
   pure
     { playerAssets:
         { standingSprite:
-            { images: [ playerImage1, playerImage1, playerImage1, playerImage1, playerImage1, playerImage1, playerImage2 ]
+            { images: [ playerImage1, playerImage3, playerImage1, playerImage3, playerImage1, playerImage3, playerImage2 ]
             , frameRate: 2.0
             }
         }
@@ -199,7 +200,7 @@ initialPlayerBody :: Body
 initialPlayerBody =
   { boundary:
       { location: { x: 0.0, y: 0.0 }
-      , dimensions: { width: 50.0, height: 50.0 }
+      , dimensions: { width: 80.0, height: 74.0 }
       }
   , velocity: { x: 0.0, y: 0.0 }
   , force: { x: 0.0, y: 0.0 }
