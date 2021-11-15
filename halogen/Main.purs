@@ -100,6 +100,8 @@ type GameAssets
 
 type CharacterAssets
   = { standingSprite :: Sprite
+    , walkingLeftSprite :: Sprite
+    , walkingRightSprite :: Sprite
     }
 
 type Animation
@@ -108,8 +110,7 @@ type Animation
     }
 
 type Sprite
-  = { frameRate :: Number
-    , images :: Array CanvasImageSource
+  = { images :: Array CanvasImageSource
     }
 
 derive instance eqButtonPosition :: Eq ButtonState
@@ -142,14 +143,41 @@ selectCanvas id errorMessage = do
 
 loadGameAssets :: Aff GameAssets
 loadGameAssets = do
-  playerImage1 <- loadImage "/sprites/gillet-standing-000.png"
-  playerImage2 <- loadImage "/sprites/gillet-standing-001.png"
-  playerImage3 <- loadImage "/sprites/gillet-standing-002.png"
+  gilletStanding000 <- loadImage "/sprites/gillet-standing-000.png"
+  gilletStanding001 <- loadImage "/sprites/gillet-standing-001.png"
+  gilletStanding002 <- loadImage "/sprites/gillet-standing-002.png"
+  gilletWalkingRight000 <- loadImage "/sprites/gillet-walking-right-000.png"
+  gilletWalkingRight001 <- loadImage "/sprites/gillet-walking-right-001.png"
+  gilletWalkingRight002 <- loadImage "/sprites/gillet-walking-right-002.png"
+  gilletWalkingLeft000 <- loadImage "/sprites/gillet-walking-left-000.png"
+  gilletWalkingLeft001 <- loadImage "/sprites/gillet-walking-left-001.png"
+  gilletWalkingLeft002 <- loadImage "/sprites/gillet-walking-left-002.png"
   pure
     { playerAssets:
         { standingSprite:
-            { images: [ playerImage1, playerImage3, playerImage1, playerImage3, playerImage1, playerImage3, playerImage2 ]
-            , frameRate: 2.0
+            { images:
+                [ gilletStanding000
+                , gilletStanding002
+                , gilletStanding000
+                , gilletStanding002
+                , gilletStanding000
+                , gilletStanding002
+                , gilletStanding001
+                ]
+            }
+        , walkingLeftSprite:
+            { images:
+                [ gilletWalkingLeft000
+                , gilletWalkingLeft001
+                , gilletWalkingLeft002
+                ]
+            }
+        , walkingRightSprite:
+            { images:
+                [ gilletWalkingRight000
+                , gilletWalkingRight001
+                , gilletWalkingRight002
+                ]
             }
         }
     }
@@ -193,7 +221,7 @@ initialPlayer :: Time -> Character
 initialPlayer time =
   { body: initialPlayerBody
   , movement: NoMovement
-  , animation: startAnimation time 2.0
+  , animation: startAnimation time 6.0
   }
 
 initialPlayerBody :: Body
@@ -386,7 +414,14 @@ renderPlayer gameContext gameAssets game =
     game.time
     game.player.body
     game.player.animation
-    gameAssets.playerAssets.standingSprite
+    (playerSprite gameAssets game.player.movement)
+
+playerSprite :: GameAssets -> Movement -> Sprite
+playerSprite gameAssets (Movement West) = gameAssets.playerAssets.walkingLeftSprite
+
+playerSprite gameAssets (Movement East) = gameAssets.playerAssets.walkingRightSprite
+
+playerSprite gameAssets _ = gameAssets.playerAssets.standingSprite
 
 renderSprite :: Context2D -> Time -> Body -> Animation -> Sprite -> Effect Unit
 renderSprite context2d time body animation sprite = case maybeCurrentImage of
@@ -400,11 +435,11 @@ renderSprite context2d time body animation sprite = case maybeCurrentImage of
       body.boundary.dimensions.height
   Nothing -> pure unit
   where
-  maybeCurrentImage = index sprite.images currentFrame
+  maybeCurrentImage = index sprite.images frameIndex
 
-  currentFrame = mod elapsed frameCount
+  frameIndex = mod currentFrame frameCount
 
-  elapsed = floor $ (elapsedSeconds time animation.startedAt) * animation.frameRate
+  currentFrame = floor $ (elapsedSeconds time animation.startedAt) * animation.frameRate
 
   frameCount = length sprite.images
 
