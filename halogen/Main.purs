@@ -14,7 +14,7 @@ import Effect.Class.Console (log)
 import Effect.Exception (error)
 import Effect.Now (nowTime)
 import Effect.Ref (Ref, new, modify_, read)
-import Graphics.Canvas (CanvasElement, CanvasImageSource, Context2D, drawImageScale, fillRect, getCanvasElementById, getContext2D, setCanvasDimensions, setFillStyle, tryLoadImage)
+import Graphics.Canvas as C
 import Web.Event.EventTarget (eventListener, addEventListener)
 import Web.Event.Internal.Types (Event)
 import Web.HTML (window)
@@ -27,8 +27,8 @@ import Math (abs)
 
 type GameContext
   = { window :: Window
-    , canvas :: CanvasElement
-    , context2d :: Context2D
+    , canvas :: C.CanvasElement
+    , context2d :: C.Context2D
     , controllerRef :: Ref Controller
     }
 
@@ -126,7 +126,7 @@ type Animation
     }
 
 type Sprite
-  = { images :: Array CanvasImageSource
+  = { images :: Array C.CanvasImageSource
     }
 
 derive instance eqButtonPosition :: Eq ButtonState
@@ -145,18 +145,18 @@ makeGameContext :: String -> Dimensions -> Effect GameContext
 makeGameContext canvasId viewPortDimensions = do
   window <- window
   canvas <- selectCanvas canvasId ("Could not find game canvas by id: " <> canvasId)
-  context2d <- getContext2D canvas
+  context2d <- C.getContext2D canvas
   controllerRef <- new initialController
-  setCanvasDimensions canvas viewPortDimensions
+  C.setCanvasDimensions canvas viewPortDimensions
   keydownListener <- eventListener (handleControllerEvent Pressed controllerRef)
   keyupListener <- eventListener (handleControllerEvent NotPressed controllerRef)
   addEventListener keydown keydownListener false (toEventTarget window)
   addEventListener keyup keyupListener false (toEventTarget window)
   pure { window, canvas, context2d, controllerRef }
 
-selectCanvas :: String -> String -> Effect CanvasElement
+selectCanvas :: String -> String -> Effect C.CanvasElement
 selectCanvas id errorMessage = do
-  maybeCanvas <- getCanvasElementById id
+  maybeCanvas <- C.getCanvasElementById id
   maybe (throwError (error errorMessage)) pure maybeCanvas
 
 loadGameAssets :: Aff GameAssets
@@ -200,13 +200,13 @@ loadGameAssets = do
         }
     }
 
-loadImage :: String -> Aff CanvasImageSource
+loadImage :: String -> Aff C.CanvasImageSource
 loadImage url = do
   let
     imageAff =
       makeAff
         ( \callback -> do
-            tryLoadImage
+            C.tryLoadImage
               url
               ( \maybeImage -> case maybeImage of
                   Nothing -> callback $ Left $ error ("Failed to load image: " <> url)
@@ -562,10 +562,10 @@ renderSolids gameContext game =
     game.solids
     (renderSolid gameContext.context2d)
 
-renderSolid :: Context2D -> Body -> Effect Unit
+renderSolid :: C.Context2D -> Body -> Effect Unit
 renderSolid context2d body = do
-  setFillStyle context2d "red"
-  fillRect
+  C.setFillStyle context2d "red"
+  C.fillRect
     context2d
     { x: body.boundary.location.x
     , y: body.boundary.location.y
@@ -589,10 +589,10 @@ playerSprite gameAssets (Movement (Walking East) _) = gameAssets.playerAssets.wa
 
 playerSprite gameAssets _ = gameAssets.playerAssets.standingSprite
 
-renderSprite :: Context2D -> Time -> Body -> Animation -> Sprite -> Effect Unit
+renderSprite :: C.Context2D -> Time -> Body -> Animation -> Sprite -> Effect Unit
 renderSprite context2d time body animation sprite = case maybeCurrentImage of
   Just currentImage ->
-    drawImageScale
+    C.drawImageScale
       context2d
       currentImage
       body.boundary.location.x
@@ -609,10 +609,10 @@ renderSprite context2d time body animation sprite = case maybeCurrentImage of
 
   frameCount = length sprite.images
 
-clearArea :: Context2D -> Boundary -> Effect Unit
+clearArea :: C.Context2D -> Boundary -> Effect Unit
 clearArea context boundary = do
-  setFillStyle context "white"
-  fillRect context
+  C.setFillStyle context "white"
+  C.fillRect context
     { x: boundary.location.x
     , y: boundary.location.y
     , width: boundary.dimensions.width
