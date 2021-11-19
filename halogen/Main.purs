@@ -52,8 +52,9 @@ type Body
     , force :: Vector
     }
 
-data Movement
-  = Movement Walk Jump
+type Movement
+  = { walk :: Walk, jump :: Jump
+    }
 
 data Walk
   = Walking Direction
@@ -61,6 +62,7 @@ data Walk
 
 data Jump
   = Jumping { startedAt :: Time }
+  | Falling
   | NotJumping
 
 data Direction
@@ -118,6 +120,9 @@ type CharacterAssets
   = { standingSprite :: Sprite
     , walkingLeftSprite :: Sprite
     , walkingRightSprite :: Sprite
+    , jumpingLeftSprite :: Sprite
+    , jumpingRightSprite :: Sprite
+    , fallingSprite :: Sprite
     }
 
 type Animation
@@ -170,6 +175,9 @@ loadGameAssets = do
   gilletWalkingLeft000 <- loadImage "/sprites/gillet-walking-left-000.png"
   gilletWalkingLeft001 <- loadImage "/sprites/gillet-walking-left-001.png"
   gilletWalkingLeft002 <- loadImage "/sprites/gillet-walking-left-002.png"
+  gilletJumpingLeft000 <- loadImage "/sprites/gillet-jumping-left-000.png"
+  gilletJumpingRight000 <- loadImage "/sprites/gillet-jumping-right-000.png"
+  gilletFalling000 <- loadImage "/sprites/gillet-falling-000.png"
   pure
     { playerAssets:
         { standingSprite:
@@ -196,6 +204,18 @@ loadGameAssets = do
                 , gilletWalkingRight001
                 , gilletWalkingRight002
                 ]
+            }
+        , jumpingLeftSprite:
+            { images:
+                [ gilletJumpingLeft000 ]
+            }
+        , jumpingRightSprite:
+            { images:
+                [ gilletJumpingRight000 ]
+            }
+        , fallingSprite:
+            { images:
+                [ gilletFalling000 ]
             }
         }
     }
@@ -239,7 +259,7 @@ defaultViewPortDimensions = { width: 900.0, height: 600.0 }
 initialPlayer :: Time -> Character
 initialPlayer time =
   { body: initialPlayerBody
-  , movement: Movement NotWalking NotJumping
+  , movement: { walk: NotWalking, jump: NotJumping }
   , animation: startAnimation time 6.0
   , collisions: []
   }
@@ -340,38 +360,52 @@ applyControls controller game =
   game
     { player
       { movement =
-        controllerToMovement
-          anyVerticalCollisions
-          game.time
-          game.player.movement
-          controller
+        movement'
+          { controller
+          , onFloor
+          , now: game.time
+          , movement: game.player.movement
+          }
       }
     }
   where
-  anyVerticalCollisions = any verticalCollision game.player.collisions
+  onFloor = any verticalCollision game.player.collisions
 
   verticalCollision collision = collisionOrientation collision == Vertical
 
-controllerToMovement :: Boolean -> Time -> Movement -> Controller -> Movement
-controllerToMovement _ _ (Movement _ (Jumping { startedAt })) { right: NotPressed, left: NotPressed, spacebar: Pressed } = Movement NotWalking (Jumping { startedAt })
+movement' :: { controller :: Controller, onFloor :: Boolean, now :: Time, movement :: Movement } -> Movement
+movement' { controller, onFloor, now, movement } =
+  { walk:
+      walk'
+        { leftButton: controller.left, rightButton: controller.right
+        }
+  , jump:
+      jump'
+        { jumpButton: controller.spacebar, onFloor, now, jump: movement.jump
+        }
+  }
 
-controllerToMovement _ _ (Movement _ (Jumping { startedAt })) { right: Pressed, left: NotPressed, spacebar: Pressed } = Movement (Walking East) (Jumping { startedAt })
+walk' :: { leftButton :: ButtonState, rightButton :: ButtonState } -> Walk
+walk' { leftButton: Pressed, rightButton: NotPressed } = Walking West
 
-controllerToMovement _ _ (Movement _ (Jumping { startedAt })) { right: NotPressed, left: Pressed, spacebar: Pressed } = Movement (Walking West) (Jumping { startedAt })
+walk' { leftButton: NotPressed, rightButton: Pressed } = Walking East
 
-controllerToMovement true time (Movement _ (NotJumping)) { right: NotPressed, left: NotPressed, spacebar: Pressed } = Movement NotWalking (Jumping { startedAt: time })
+walk' _ = NotWalking
 
-controllerToMovement true time (Movement _ (NotJumping)) { right: Pressed, left: NotPressed, spacebar: Pressed } = Movement (Walking East) (Jumping { startedAt: time })
+jump' :: { jumpButton :: ButtonState, onFloor :: Boolean, now :: Time, jump :: Jump } -> Jump
+jump' { jumpButton: Pressed, onFloor: true, now, jump: _ } = Jumping { startedAt: now }
 
-controllerToMovement true time (Movement _ (NotJumping)) { right: NotPressed, left: Pressed, spacebar: Pressed } = Movement (Walking West) (Jumping { startedAt: time })
+jump' { jumpButton: Pressed, onFloor: false, now, jump: Jumping { startedAt } } =
+  if elapsedSeconds now startedAt < jumpImpulseDuration then
+    Jumping { startedAt }
+  else
+    Falling
 
-controllerToMovement _ _ _ { right: NotPressed, left: NotPressed, spacebar: NotPressed } = Movement NotWalking NotJumping
+jump' { jumpButton: Pressed, onFloor: false, now: _, jump: Falling } = Falling
 
-controllerToMovement _ _ _ { right: Pressed, left: NotPressed, spacebar: NotPressed } = Movement (Walking East) NotJumping
+jump' { jumpButton: NotPressed, onFloor: false, now: _, jump: _ } = Falling
 
-controllerToMovement _ _ _ { right: NotPressed, left: Pressed, spacebar: NotPressed } = Movement (Walking West) NotJumping
-
-controllerToMovement _ _ _ _ = Movement NotWalking NotJumping
+jump' _ = NotJumping
 
 applyAi :: Game -> Game
 applyAi game = game
@@ -387,15 +421,15 @@ applyForces game =
     }
 
 movementToForce :: Time -> Movement -> Matrix2x1
-movementToForce time (Movement NotWalking (Jumping { startedAt })) = { x: 0.0, y: -(decideJumpForce startedAt time) }
+movementToForce time { walk: NotWalking, jump: Jumping { startedAt } } = { x: 0.0, y: -(decideJumpForce startedAt time) }
 
-movementToForce time (Movement (Walking East) (Jumping { startedAt })) = { x: movementForce, y: -(decideJumpForce startedAt time) }
+movementToForce time { walk: Walking East, jump: Jumping { startedAt } } = { x: movementForce, y: -(decideJumpForce startedAt time) }
 
-movementToForce time (Movement (Walking West) (Jumping { startedAt })) = { x: -movementForce, y: -(decideJumpForce startedAt time) }
+movementToForce time { walk: Walking West, jump: Jumping { startedAt } } = { x: -movementForce, y: -(decideJumpForce startedAt time) }
 
-movementToForce _ (Movement (Walking East) NotJumping) = { x: movementForce, y: 0.0 }
+movementToForce _ { walk: Walking East, jump: _ } = { x: movementForce, y: 0.0 }
 
-movementToForce _ (Movement (Walking West) NotJumping) = { x: -movementForce, y: 0.0 }
+movementToForce _ { walk: Walking West, jump: _ } = { x: -movementForce, y: 0.0 }
 
 movementToForce _ _ = { x: 0.0, y: 0.0 }
 
@@ -410,10 +444,10 @@ decideJumpForce startedAt now =
     0.0
 
 jumpImpulseDuration :: Number
-jumpImpulseDuration = 90.0 / 1000.0
+jumpImpulseDuration = 70.0 / 1000.0
 
 jumpForce :: Number
-jumpForce = 25000.0
+jumpForce = 30000.0
 
 applyPhysics :: Time -> Game -> Game
 applyPhysics time game =
@@ -450,7 +484,7 @@ updateBody time1 time2 body =
 
   gravityForce =
     { x: 0.0
-    , y: 3500.0 * elapsed
+    , y: 4000.0 * elapsed
     }
 
   frictionForce =
@@ -583,9 +617,15 @@ renderPlayer gameContext gameAssets game =
     (playerSprite gameAssets game.player.movement)
 
 playerSprite :: GameAssets -> Movement -> Sprite
-playerSprite gameAssets (Movement (Walking West) _) = gameAssets.playerAssets.walkingLeftSprite
+playerSprite gameAssets { walk: Walking East, jump: NotJumping } = gameAssets.playerAssets.walkingRightSprite
 
-playerSprite gameAssets (Movement (Walking East) _) = gameAssets.playerAssets.walkingRightSprite
+playerSprite gameAssets { walk: Walking West, jump: NotJumping } = gameAssets.playerAssets.walkingLeftSprite
+
+playerSprite gameAssets { walk: Walking East, jump: Jumping _ } = gameAssets.playerAssets.jumpingRightSprite
+
+playerSprite gameAssets { walk: Walking West, jump: Jumping _ } = gameAssets.playerAssets.jumpingLeftSprite
+
+playerSprite gameAssets { walk: _, jump: Falling } = gameAssets.playerAssets.fallingSprite
 
 playerSprite gameAssets _ = gameAssets.playerAssets.standingSprite
 
