@@ -2,7 +2,7 @@ module Main where
 
 import Prelude
 import Control.Monad.Error.Class (throwError)
-import Data.Array (length, index)
+import Data.Array (length, index, catMaybes)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Time (Time, diff)
@@ -22,6 +22,8 @@ import Web.HTML.Window (Window, requestAnimationFrame, toEventTarget)
 import Web.UIEvent.KeyboardEvent (KeyboardEvent, fromEvent, code)
 import Web.UIEvent.KeyboardEvent.EventTypes (keydown, keyup)
 import Data.Int (floor)
+import Data.Foldable (foldr, for_, any)
+import Math (abs)
 
 type GameContext
   = { window :: Window
@@ -34,12 +36,14 @@ type Game
   = { time :: Time
     , viewPort :: Boundary
     , player :: Character
+    , solids :: Array Body
     }
 
 type Character
   = { body :: Body
     , movement :: Movement
     , animation :: Animation
+    , collisions :: Array Collision
     }
 
 type Body
@@ -49,18 +53,31 @@ type Body
     }
 
 data Movement
-  = Movement Direction
-  | NoMovement
+  = Movement Walk Jump
+
+data Walk
+  = Walking Direction
+  | NotWalking
+
+data Jump
+  = Jumping { startedAt :: Time }
+  | NotJumping
 
 data Direction
-  = North
-  | NorthEast
-  | East
-  | SouthEast
-  | South
-  | SouthWest
+  = East
   | West
-  | NorthWest
+
+data Orientation
+  = Vertical
+  | Horizontal
+
+type Collision
+  = { target :: Body
+    , overlap :: Overlap
+    }
+
+type Overlap
+  = Matrix2x1
 
 type Boundary
   = { location :: Location
@@ -84,10 +101,9 @@ type Matrix2x1
     }
 
 type Controller
-  = { up :: ButtonState
-    , down :: ButtonState
-    , left :: ButtonState
+  = { left :: ButtonState
     , right :: ButtonState
+    , spacebar :: ButtonState
     }
 
 data ButtonState
@@ -114,6 +130,8 @@ type Sprite
     }
 
 derive instance eqButtonPosition :: Eq ButtonState
+
+derive instance eqOrientation :: Eq Orientation
 
 main :: Effect Unit
 main = do
@@ -206,6 +224,7 @@ initialGame time =
   { time
   , viewPort: initialViewPort
   , player: initialPlayer time
+  , solids: initialSolids
   }
 
 initialViewPort :: Boundary
@@ -220,26 +239,44 @@ defaultViewPortDimensions = { width: 900.0, height: 600.0 }
 initialPlayer :: Time -> Character
 initialPlayer time =
   { body: initialPlayerBody
-  , movement: NoMovement
+  , movement: Movement NotWalking NotJumping
   , animation: startAnimation time 6.0
+  , collisions: []
   }
 
 initialPlayerBody :: Body
 initialPlayerBody =
   { boundary:
-      { location: { x: 0.0, y: 0.0 }
+      { location: { x: 10.0, y: 0.0 }
       , dimensions: { width: 80.0, height: 74.0 }
       }
   , velocity: { x: 0.0, y: 0.0 }
   , force: { x: 0.0, y: 0.0 }
   }
 
+initialSolids :: Array Body
+initialSolids =
+  [ { boundary:
+        { location: { x: 0.0, y: 500.0 }
+        , dimensions: { width: 200.0, height: 10.0 }
+        }
+    , velocity: { x: 0.0, y: 0.0 }
+    , force: { x: 0.0, y: 0.0 }
+    }
+  , { boundary:
+        { location: { x: 0.0, y: 300.0 }
+        , dimensions: { width: 10.0, height: 200.0 }
+        }
+    , velocity: { x: 0.0, y: 0.0 }
+    , force: { x: 0.0, y: 0.0 }
+    }
+  ]
+
 initialController :: Controller
 initialController =
-  { up: NotPressed
-  , down: NotPressed
-  , left: NotPressed
+  { left: NotPressed
   , right: NotPressed
+  , spacebar: NotPressed
   }
 
 handleControllerEvent :: ButtonState -> Ref Controller -> Event -> Effect Unit
@@ -249,10 +286,9 @@ handleControllerEvent buttonState controllerRef event = case fromEvent event of
 
 updateController :: ButtonState -> KeyboardEvent -> Controller -> Controller
 updateController buttonState keyboardEvent controller = case code keyboardEvent of
-  "ArrowUp" -> controller { up = buttonState }
-  "ArrowDown" -> controller { down = buttonState }
   "ArrowLeft" -> controller { left = buttonState }
   "ArrowRight" -> controller { right = buttonState }
+  "ArrowUp" -> controller { spacebar = buttonState }
   _ -> controller
 
 requestNextFrame :: GameContext -> GameAssets -> Game -> Aff Unit
@@ -293,6 +329,8 @@ updateGame time controller game =
     # applyAi
     # applyForces
     # applyPhysics time
+    # updateCollisions
+    # resolveCollisions
     # applyRules
     # updateTime time
     # evaluateGameEnd
@@ -301,29 +339,81 @@ applyControls :: Controller -> Game -> Game
 applyControls controller game =
   game
     { player
-      { movement = controllerToMovement controller
+      { movement =
+        controllerToMovement
+          anyVerticalCollisions
+          game.time
+          game.player.movement
+          controller
       }
     }
+  where
+  anyVerticalCollisions = any verticalCollision game.player.collisions
 
-controllerToMovement :: Controller -> Movement
-controllerToMovement { up: Pressed, right: NotPressed, down: NotPressed, left: NotPressed } = Movement North
+  verticalCollision collision = collisionOrientation collision == Vertical
 
-controllerToMovement { up: Pressed, right: Pressed, down: NotPressed, left: NotPressed } = Movement NorthEast
+controllerToMovement :: Boolean -> Time -> Movement -> Controller -> Movement
+controllerToMovement _ _ (Movement _ (Jumping { startedAt })) { right: NotPressed, left: NotPressed, spacebar: Pressed } = Movement NotWalking (Jumping { startedAt })
 
-controllerToMovement { up: NotPressed, right: Pressed, down: NotPressed, left: NotPressed } = Movement East
+controllerToMovement _ _ (Movement _ (Jumping { startedAt })) { right: Pressed, left: NotPressed, spacebar: Pressed } = Movement (Walking East) (Jumping { startedAt })
 
-controllerToMovement { up: NotPressed, right: Pressed, down: Pressed, left: NotPressed } = Movement SouthEast
+controllerToMovement _ _ (Movement _ (Jumping { startedAt })) { right: NotPressed, left: Pressed, spacebar: Pressed } = Movement (Walking West) (Jumping { startedAt })
 
-controllerToMovement { up: NotPressed, right: NotPressed, down: Pressed, left: NotPressed } = Movement South
+controllerToMovement true time (Movement _ (NotJumping)) { right: NotPressed, left: NotPressed, spacebar: Pressed } = Movement NotWalking (Jumping { startedAt: time })
 
-controllerToMovement { up: NotPressed, right: NotPressed, down: Pressed, left: Pressed } = Movement SouthWest
+controllerToMovement true time (Movement _ (NotJumping)) { right: Pressed, left: NotPressed, spacebar: Pressed } = Movement (Walking East) (Jumping { startedAt: time })
 
-controllerToMovement { up: NotPressed, right: NotPressed, down: NotPressed, left: Pressed } = Movement West
+controllerToMovement true time (Movement _ (NotJumping)) { right: NotPressed, left: Pressed, spacebar: Pressed } = Movement (Walking West) (Jumping { startedAt: time })
 
-controllerToMovement _ = NoMovement
+controllerToMovement _ _ _ { right: NotPressed, left: NotPressed, spacebar: NotPressed } = Movement NotWalking NotJumping
+
+controllerToMovement _ _ _ { right: Pressed, left: NotPressed, spacebar: NotPressed } = Movement (Walking East) NotJumping
+
+controllerToMovement _ _ _ { right: NotPressed, left: Pressed, spacebar: NotPressed } = Movement (Walking West) NotJumping
+
+controllerToMovement _ _ _ _ = Movement NotWalking NotJumping
 
 applyAi :: Game -> Game
 applyAi game = game
+
+applyForces :: Game -> Game
+applyForces game =
+  game
+    { player
+      { body
+        { force = movementToForce game.time game.player.movement
+        }
+      }
+    }
+
+movementToForce :: Time -> Movement -> Matrix2x1
+movementToForce time (Movement NotWalking (Jumping { startedAt })) = { x: 0.0, y: -(decideJumpForce startedAt time) }
+
+movementToForce time (Movement (Walking East) (Jumping { startedAt })) = { x: movementForce, y: -(decideJumpForce startedAt time) }
+
+movementToForce time (Movement (Walking West) (Jumping { startedAt })) = { x: -movementForce, y: -(decideJumpForce startedAt time) }
+
+movementToForce _ (Movement (Walking East) NotJumping) = { x: movementForce, y: 0.0 }
+
+movementToForce _ (Movement (Walking West) NotJumping) = { x: -movementForce, y: 0.0 }
+
+movementToForce _ _ = { x: 0.0, y: 0.0 }
+
+movementForce :: Number
+movementForce = 1500.0
+
+decideJumpForce :: Time -> Time -> Number
+decideJumpForce startedAt now =
+  if elapsedSeconds now startedAt < jumpImpulseDuration then
+    jumpForce
+  else
+    0.0
+
+jumpImpulseDuration :: Number
+jumpImpulseDuration = 90.0 / 1000.0
+
+jumpForce :: Number
+jumpForce = 25000.0
 
 applyPhysics :: Time -> Game -> Game
 applyPhysics time game =
@@ -336,61 +426,119 @@ applyPhysics time game =
 updateBody :: Time -> Time -> Body -> Body
 updateBody time1 time2 body =
   body
-    { velocity = addMatrix2x1 body.velocity totalForce
+    { velocity = velocity'
     , boundary
-      { location = addMatrix2x1 body.boundary.location distance
+      { location = location'
       }
     }
   where
-  totalForce = addMatrix2x1 actingForce frictionalForce
+  location' = addMatrix2x1 body.boundary.location distanceTraveled
+
+  distanceTraveled =
+    { x: velocity'.x * elapsed
+    , y: velocity'.y * elapsed
+    }
+
+  velocity' = addMatrix2x1 body.velocity force'
+
+  force' = foldr addMatrix2x1 actingForce [ frictionForce, gravityForce ]
 
   actingForce =
     { x: body.force.x * elapsed
     , y: body.force.y * elapsed
     }
 
-  frictionalForce =
-    { x: -1.0 * mu * body.velocity.x * elapsed
-    , y: -1.0 * mu * body.velocity.y * elapsed
+  gravityForce =
+    { x: 0.0
+    , y: 3500.0 * elapsed
     }
 
-  distance =
-    { x: body.velocity.x * elapsed
-    , y: body.velocity.y * elapsed
+  frictionForce =
+    { x: -1.0 * mu * body.velocity.x * elapsed
+    , y: -1.0 * mu * body.velocity.y * elapsed
     }
 
   elapsed = elapsedSeconds time1 time2
 
   mu = 6.0
 
-applyForces :: Game -> Game
-applyForces game =
+updateCollisions :: Game -> Game
+updateCollisions game =
   game
     { player
-      { body
-        { force = movementToForce game.player.movement
-        }
+      { collisions = detectCollisions game.solids game.player.body
       }
     }
 
-movementToForce :: Movement -> Matrix2x1
-movementToForce NoMovement = { x: 0.0, y: 0.0 }
+resolveCollisions :: Game -> Game
+resolveCollisions game =
+  game
+    { player
+      { body
+        { boundary { location = playerLocation' }
+        }
+      }
+    }
+  where
+  playerLocation' =
+    foldr
+      addMatrix2x1
+      game.player.body.boundary.location
+      (collisionResolution <$> game.player.collisions)
 
-movementToForce (Movement North) = { x: 0.0, y: -600.0 }
+collisionResolution :: Collision -> Matrix2x1
+collisionResolution collision' =
+  if (abs collision'.overlap.x) < (abs collision'.overlap.y) then
+    { x: collision'.overlap.x * -1.0, y: 0.0 }
+  else
+    { x: 0.0, y: collision'.overlap.y * -1.0 }
 
-movementToForce (Movement NorthEast) = { x: 600.0, y: -600.0 }
+detectCollisions :: Array Body -> Body -> Array Collision
+detectCollisions bodies body = catMaybes $ detectCollision body <$> bodies
 
-movementToForce (Movement East) = { x: 600.0, y: 0.0 }
+detectCollision :: Body -> Body -> Maybe Collision
+detectCollision projectile target = case { x: overlapX, y: overlapY } of
+  { x: Just x, y: Just y } -> Just { target, overlap: { x, y } }
+  _ -> Nothing
+  where
+  overlapX = overlap px1 px2 tx1 tx2
 
-movementToForce (Movement SouthEast) = { x: 600.0, y: 600.0 }
+  overlapY = overlap py1 py2 ty1 ty2
 
-movementToForce (Movement South) = { x: 0.0, y: 600.0 }
+  px1 = projectile.boundary.location.x
 
-movementToForce (Movement SouthWest) = { x: -600.0, y: 600.0 }
+  px2 = px1 + projectile.boundary.dimensions.width
 
-movementToForce (Movement West) = { x: -600.0, y: 0.0 }
+  py1 = projectile.boundary.location.y
 
-movementToForce (Movement NorthWest) = { x: -600.0, y: -600.0 }
+  py2 = py1 + projectile.boundary.dimensions.height
+
+  tx1 = target.boundary.location.x
+
+  tx2 = tx1 + target.boundary.dimensions.width
+
+  ty1 = target.boundary.location.y
+
+  ty2 = ty1 + target.boundary.dimensions.height
+
+overlap :: Number -> Number -> Number -> Number -> Maybe Number
+overlap aLeft aRight bLeft bRight
+  | aLeft <= bLeft && bLeft <= aRight && aRight <= bRight = Just (aRight - bLeft)
+  | bLeft <= aLeft && aLeft <= aRight && aRight <= bRight = Just (if (aLeft - bLeft) < (bRight - aRight) then aRight - bLeft else bRight - aLeft)
+  | aLeft <= bLeft && bLeft <= bRight && bRight <= aRight = Just (if (bLeft - aLeft) < (aRight - bRight) then bRight - aLeft else aRight - bLeft)
+  | bLeft <= aLeft && aLeft <= bRight && bRight <= aRight = Just (aLeft - bRight)
+  | otherwise = Nothing
+
+collisionOrientation :: Collision -> Orientation
+collisionOrientation collision =
+  if y > 0.0 && y <= x then
+    Vertical
+  else
+    Horizontal
+  where
+  x = abs collision.overlap.x
+
+  y = abs collision.overlap.y
 
 applyRules :: Game -> Game
 applyRules game = game
@@ -405,7 +553,25 @@ render :: GameContext -> GameAssets -> Game -> Aff Unit
 render gameContext gameAssets game =
   liftEffect do
     clearArea gameContext.context2d game.viewPort
+    renderSolids gameContext game
     renderPlayer gameContext gameAssets game
+
+renderSolids :: GameContext -> Game -> Effect Unit
+renderSolids gameContext game =
+  for_
+    game.solids
+    (renderSolid gameContext.context2d)
+
+renderSolid :: Context2D -> Body -> Effect Unit
+renderSolid context2d body = do
+  setFillStyle context2d "red"
+  fillRect
+    context2d
+    { x: body.boundary.location.x
+    , y: body.boundary.location.y
+    , width: body.boundary.dimensions.width
+    , height: body.boundary.dimensions.height
+    }
 
 renderPlayer :: GameContext -> GameAssets -> Game -> Effect Unit
 renderPlayer gameContext gameAssets game =
@@ -417,9 +583,9 @@ renderPlayer gameContext gameAssets game =
     (playerSprite gameAssets game.player.movement)
 
 playerSprite :: GameAssets -> Movement -> Sprite
-playerSprite gameAssets (Movement West) = gameAssets.playerAssets.walkingLeftSprite
+playerSprite gameAssets (Movement (Walking West) _) = gameAssets.playerAssets.walkingLeftSprite
 
-playerSprite gameAssets (Movement East) = gameAssets.playerAssets.walkingRightSprite
+playerSprite gameAssets (Movement (Walking East) _) = gameAssets.playerAssets.walkingRightSprite
 
 playerSprite gameAssets _ = gameAssets.playerAssets.standingSprite
 
