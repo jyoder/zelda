@@ -63,6 +63,7 @@ data Walk
 data Jump
   = Jumping { startedAt :: Time }
   | Falling
+  | Landing
   | NotJumping
 
 data Direction
@@ -393,7 +394,7 @@ walk' { leftButton: NotPressed, rightButton: Pressed } = Walking East
 walk' _ = NotWalking
 
 jump' :: { jumpButton :: ButtonState, onFloor :: Boolean, now :: Time, jump :: Jump } -> Jump
-jump' { jumpButton: Pressed, onFloor: true, now, jump: _ } = Jumping { startedAt: now }
+jump' { jumpButton: Pressed, onFloor: true, now, jump: NotJumping } = Jumping { startedAt: now }
 
 jump' { jumpButton: Pressed, onFloor: false, now, jump: Jumping { startedAt } } =
   if elapsedSeconds now startedAt < jumpImpulseDuration then
@@ -402,6 +403,10 @@ jump' { jumpButton: Pressed, onFloor: false, now, jump: Jumping { startedAt } } 
     Falling
 
 jump' { jumpButton: Pressed, onFloor: false, now: _, jump: Falling } = Falling
+
+jump' { jumpButton: Pressed, onFloor: true, now: _, jump: Falling } = Landing
+
+jump' { jumpButton: Pressed, onFloor: true, now: _, jump: Landing } = Landing
 
 jump' { jumpButton: NotPressed, onFloor: false, now: _, jump: _ } = Falling
 
@@ -620,6 +625,10 @@ playerSprite :: GameAssets -> Movement -> Sprite
 playerSprite gameAssets { walk: Walking East, jump: NotJumping } = gameAssets.playerAssets.walkingRightSprite
 
 playerSprite gameAssets { walk: Walking West, jump: NotJumping } = gameAssets.playerAssets.walkingLeftSprite
+
+playerSprite gameAssets { walk: Walking East, jump: Landing } = gameAssets.playerAssets.walkingRightSprite
+
+playerSprite gameAssets { walk: Walking West, jump: Landing } = gameAssets.playerAssets.walkingLeftSprite
 
 playerSprite gameAssets { walk: Walking East, jump: Jumping _ } = gameAssets.playerAssets.jumpingRightSprite
 
