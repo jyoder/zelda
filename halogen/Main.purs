@@ -106,7 +106,7 @@ type Matrix2x1
 type Controller
   = { left :: ButtonState
     , right :: ButtonState
-    , spacebar :: ButtonState
+    , up :: ButtonState
     }
 
 data ButtonState
@@ -297,7 +297,7 @@ initialController :: Controller
 initialController =
   { left: NotPressed
   , right: NotPressed
-  , spacebar: NotPressed
+  , up: NotPressed
   }
 
 handleControllerEvent :: ButtonState -> Ref Controller -> Event -> Effect Unit
@@ -309,7 +309,7 @@ updateController :: ButtonState -> KeyboardEvent -> Controller -> Controller
 updateController buttonState keyboardEvent controller = case code keyboardEvent of
   "ArrowLeft" -> controller { left = buttonState }
   "ArrowRight" -> controller { right = buttonState }
-  "ArrowUp" -> controller { spacebar = buttonState }
+  "ArrowUp" -> controller { up = buttonState }
   _ -> controller
 
 requestNextFrame :: GameContext -> GameAssets -> Game -> Aff Unit
@@ -382,7 +382,7 @@ movement' { controller, onFloor, now, movement } =
         }
   , jump:
       jump'
-        { jumpButton: controller.spacebar, onFloor, now, jump: movement.jump
+        { jumpButton: controller.up, onFloor, now, jump: movement.jump
         }
   }
 
