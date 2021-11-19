@@ -2,7 +2,7 @@ module Main where
 
 import Prelude
 import Control.Monad.Error.Class (throwError)
-import Data.Array (length, index, catMaybes)
+import Data.Array (length, index, catMaybes, range)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Time (Time, diff)
@@ -21,7 +21,7 @@ import Web.HTML (window)
 import Web.HTML.Window (Window, requestAnimationFrame, toEventTarget)
 import Web.UIEvent.KeyboardEvent (KeyboardEvent, fromEvent, code)
 import Web.UIEvent.KeyboardEvent.EventTypes (keydown, keyup)
-import Data.Int (floor)
+import Data.Int (floor, toNumber)
 import Data.Foldable (foldr, for_, any)
 import Math (abs)
 
@@ -114,16 +114,21 @@ data ButtonState
   | Pressed
 
 type GameAssets
-  = { playerAssets :: CharacterAssets
+  = { player :: CharacterAssets
+    , solids :: SolidAssets
+    }
+
+type SolidAssets
+  = { blockSolid :: Sprite
     }
 
 type CharacterAssets
-  = { standingSprite :: Sprite
-    , walkingLeftSprite :: Sprite
-    , walkingRightSprite :: Sprite
-    , jumpingLeftSprite :: Sprite
-    , jumpingRightSprite :: Sprite
-    , fallingSprite :: Sprite
+  = { standing :: Sprite
+    , walkingLeft :: Sprite
+    , walkingRight :: Sprite
+    , jumpingLeft :: Sprite
+    , jumpingRight :: Sprite
+    , falling :: Sprite
     }
 
 type Animation
@@ -167,6 +172,7 @@ selectCanvas id errorMessage = do
 
 loadGameAssets :: Aff GameAssets
 loadGameAssets = do
+  blockSolid000 <- loadImage "/sprites/block-solid-000.png"
   gilletStanding000 <- loadImage "/sprites/gillet-standing-000.png"
   gilletStanding001 <- loadImage "/sprites/gillet-standing-001.png"
   gilletStanding002 <- loadImage "/sprites/gillet-standing-002.png"
@@ -180,8 +186,8 @@ loadGameAssets = do
   gilletJumpingRight000 <- loadImage "/sprites/gillet-jumping-right-000.png"
   gilletFalling000 <- loadImage "/sprites/gillet-falling-000.png"
   pure
-    { playerAssets:
-        { standingSprite:
+    { player:
+        { standing:
             { images:
                 [ gilletStanding000
                 , gilletStanding002
@@ -192,31 +198,36 @@ loadGameAssets = do
                 , gilletStanding001
                 ]
             }
-        , walkingLeftSprite:
+        , walkingLeft:
             { images:
                 [ gilletWalkingLeft000
                 , gilletWalkingLeft001
                 , gilletWalkingLeft002
                 ]
             }
-        , walkingRightSprite:
+        , walkingRight:
             { images:
                 [ gilletWalkingRight000
                 , gilletWalkingRight001
                 , gilletWalkingRight002
                 ]
             }
-        , jumpingLeftSprite:
+        , jumpingLeft:
             { images:
                 [ gilletJumpingLeft000 ]
             }
-        , jumpingRightSprite:
+        , jumpingRight:
             { images:
                 [ gilletJumpingRight000 ]
             }
-        , fallingSprite:
+        , falling:
             { images:
                 [ gilletFalling000 ]
+            }
+        }
+    , solids:
+        { blockSolid:
+            { images: [ blockSolid000 ]
             }
         }
     }
@@ -277,21 +288,16 @@ initialPlayerBody =
 
 initialSolids :: Array Body
 initialSolids =
-  [ { boundary:
-        { location: { x: 0.0, y: 500.0 }
-        , dimensions: { width: 200.0, height: 10.0 }
-        }
-    , velocity: { x: 0.0, y: 0.0 }
-    , force: { x: 0.0, y: 0.0 }
-    }
-  , { boundary:
-        { location: { x: 0.0, y: 300.0 }
-        , dimensions: { width: 10.0, height: 200.0 }
-        }
-    , velocity: { x: 0.0, y: 0.0 }
-    , force: { x: 0.0, y: 0.0 }
-    }
-  ]
+  ( \i ->
+      { boundary:
+          { location: { x: (toNumber (mod i 24)) * 40.0, y: 500.0 + (toNumber (floor ((toNumber i) / 24.0)) * 37.0) }
+          , dimensions: { width: 40.0, height: 37.0 }
+          }
+      , velocity: { x: 0.0, y: 0.0 }
+      , force: { x: 0.0, y: 0.0 }
+      }
+  )
+    <$> range 0 (24 * 4)
 
 initialController :: Controller
 initialController =
@@ -592,25 +598,23 @@ render :: GameContext -> GameAssets -> Game -> Aff Unit
 render gameContext gameAssets game =
   liftEffect do
     clearArea gameContext.context2d game.viewPort
-    renderSolids gameContext game
+    renderSolids gameContext gameAssets game
     renderPlayer gameContext gameAssets game
 
-renderSolids :: GameContext -> Game -> Effect Unit
-renderSolids gameContext game =
+renderSolids :: GameContext -> GameAssets -> Game -> Effect Unit
+renderSolids gameContext gameAssets game =
   for_
     game.solids
-    (renderSolid gameContext.context2d)
+    (renderSolid gameContext gameAssets game)
 
-renderSolid :: C.Context2D -> Body -> Effect Unit
-renderSolid context2d body = do
-  C.setFillStyle context2d "red"
-  C.fillRect
-    context2d
-    { x: body.boundary.location.x
-    , y: body.boundary.location.y
-    , width: body.boundary.dimensions.width
-    , height: body.boundary.dimensions.height
-    }
+renderSolid :: GameContext -> GameAssets -> Game -> Body -> Effect Unit
+renderSolid gameContext gameAssets game body = do
+  renderSprite
+    gameContext.context2d
+    game.time
+    body
+    { startedAt: game.time, frameRate: 1.0 }
+    gameAssets.solids.blockSolid
 
 renderPlayer :: GameContext -> GameAssets -> Game -> Effect Unit
 renderPlayer gameContext gameAssets game =
@@ -622,21 +626,21 @@ renderPlayer gameContext gameAssets game =
     (playerSprite gameAssets game.player.movement)
 
 playerSprite :: GameAssets -> Movement -> Sprite
-playerSprite gameAssets { walk: Walking East, jump: NotJumping } = gameAssets.playerAssets.walkingRightSprite
+playerSprite gameAssets { walk: Walking East, jump: NotJumping } = gameAssets.player.walkingRight
 
-playerSprite gameAssets { walk: Walking West, jump: NotJumping } = gameAssets.playerAssets.walkingLeftSprite
+playerSprite gameAssets { walk: Walking West, jump: NotJumping } = gameAssets.player.walkingLeft
 
-playerSprite gameAssets { walk: Walking East, jump: Landing } = gameAssets.playerAssets.walkingRightSprite
+playerSprite gameAssets { walk: Walking East, jump: Landing } = gameAssets.player.walkingRight
 
-playerSprite gameAssets { walk: Walking West, jump: Landing } = gameAssets.playerAssets.walkingLeftSprite
+playerSprite gameAssets { walk: Walking West, jump: Landing } = gameAssets.player.walkingLeft
 
-playerSprite gameAssets { walk: Walking East, jump: Jumping _ } = gameAssets.playerAssets.jumpingRightSprite
+playerSprite gameAssets { walk: Walking East, jump: Jumping _ } = gameAssets.player.jumpingRight
 
-playerSprite gameAssets { walk: Walking West, jump: Jumping _ } = gameAssets.playerAssets.jumpingLeftSprite
+playerSprite gameAssets { walk: Walking West, jump: Jumping _ } = gameAssets.player.jumpingLeft
 
-playerSprite gameAssets { walk: _, jump: Falling } = gameAssets.playerAssets.fallingSprite
+playerSprite gameAssets { walk: _, jump: Falling } = gameAssets.player.falling
 
-playerSprite gameAssets _ = gameAssets.playerAssets.standingSprite
+playerSprite gameAssets _ = gameAssets.player.standing
 
 renderSprite :: C.Context2D -> Time -> Body -> Animation -> Sprite -> Effect Unit
 renderSprite context2d time body animation sprite = case maybeCurrentImage of
