@@ -4,6 +4,8 @@ import Prelude
 import Control.Monad.Error.Class (throwError)
 import Data.Array (length, index, catMaybes, range)
 import Data.Either (Either(..))
+import Data.Foldable (foldr, for_, any)
+import Data.Int (floor, toNumber)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Time (Time, diff)
 import Data.Time.Duration (Seconds(..))
@@ -15,15 +17,13 @@ import Effect.Exception (error)
 import Effect.Now (nowTime)
 import Effect.Ref (Ref, new, modify_, read)
 import Graphics.Canvas as C
+import Math (abs)
 import Web.Event.EventTarget (eventListener, addEventListener)
 import Web.Event.Internal.Types (Event)
 import Web.HTML (window)
 import Web.HTML.Window (Window, requestAnimationFrame, toEventTarget)
 import Web.UIEvent.KeyboardEvent (KeyboardEvent, fromEvent, code)
 import Web.UIEvent.KeyboardEvent.EventTypes (keydown, keyup)
-import Data.Int (floor, toNumber)
-import Data.Foldable (foldr, for_, any)
-import Math (abs)
 
 type GameContext
   = { window :: Window
@@ -288,16 +288,25 @@ initialPlayerBody =
 
 initialSolids :: Array Body
 initialSolids =
-  ( \i ->
-      { boundary:
-          { location: { x: (toNumber (mod i 24)) * 40.0, y: 500.0 + (toNumber (floor ((toNumber i) / 24.0)) * 37.0) }
-          , dimensions: { width: 40.0, height: 37.0 }
-          }
-      , velocity: { x: 0.0, y: 0.0 }
-      , force: { x: 0.0, y: 0.0 }
-      }
+  ( ( \i ->
+        { boundary:
+            { location: { x: (toNumber (mod i 24)) * 40.0, y: 500.0 + (toNumber (floor ((toNumber i) / 24.0)) * 37.0) }
+            , dimensions: { width: 40.0, height: 37.0 }
+            }
+        , velocity: { x: 0.0, y: 0.0 }
+        , force: { x: 0.0, y: 0.0 }
+        }
+    )
+      <$> range 0 (24 * 4)
   )
-    <$> range 0 (24 * 4)
+    <> [ { boundary:
+            { location: { x: 120.0, y: (500.0 - 37.0) }
+            , dimensions: { width: 40.0, height: 37.0 }
+            }
+        , velocity: { x: 0.0, y: 0.0 }
+        , force: { x: 0.0, y: 0.0 }
+        }
+      ]
 
 initialController :: Controller
 initialController =
@@ -526,13 +535,23 @@ resolveCollisions game =
     }
   where
   playerLocation' =
-    foldr
-      addMatrix2x1
+    addMatrix2x1
       game.player.body.boundary.location
-      (collisionResolution <$> game.player.collisions)
+      (collisionResolution game.player.collisions)
 
-collisionResolution :: Collision -> Matrix2x1
-collisionResolution collision' =
+collisionResolution :: Array Collision -> Matrix2x1
+collisionResolution collisions = addMatrix2x1 maxX maxY
+  where
+  maxX = foldr (\r1 r2 -> if (abs r1.x) > (abs r2.x) then r1 else r2) nullResolution resolutions
+
+  maxY = foldr (\r1 r2 -> if (abs r1.y) > (abs r2.y) then r1 else r2) nullResolution resolutions
+
+  resolutions = singleCollisionResolution <$> collisions
+
+  nullResolution = { x: 0.0, y: 0.0 }
+
+singleCollisionResolution :: Collision -> Matrix2x1
+singleCollisionResolution collision' =
   if (abs collision'.overlap.x) < (abs collision'.overlap.y) then
     { x: collision'.overlap.x * -1.0, y: 0.0 }
   else
@@ -543,7 +562,11 @@ detectCollisions bodies body = catMaybes $ detectCollision body <$> bodies
 
 detectCollision :: Body -> Body -> Maybe Collision
 detectCollision projectile target = case { x: overlapX, y: overlapY } of
-  { x: Just x, y: Just y } -> Just { target, overlap: { x, y } }
+  { x: Just x, y: Just y } ->
+    if abs x < threshold && abs y < threshold then
+      Nothing
+    else
+      Just { target, overlap: { x, y } }
   _ -> Nothing
   where
   overlapX = overlap px1 px2 tx1 tx2
@@ -565,6 +588,8 @@ detectCollision projectile target = case { x: overlapX, y: overlapY } of
   ty1 = target.boundary.location.y
 
   ty2 = ty1 + target.boundary.dimensions.height
+
+  threshold = 15.0
 
 overlap :: Number -> Number -> Number -> Number -> Maybe Number
 overlap aLeft aRight bLeft bRight
@@ -638,7 +663,11 @@ playerSprite gameAssets { walk: Walking East, jump: Jumping _ } = gameAssets.pla
 
 playerSprite gameAssets { walk: Walking West, jump: Jumping _ } = gameAssets.player.jumpingLeft
 
-playerSprite gameAssets { walk: _, jump: Falling } = gameAssets.player.falling
+playerSprite gameAssets { walk: Walking East, jump: Falling } = gameAssets.player.jumpingRight
+
+playerSprite gameAssets { walk: Walking West, jump: Falling } = gameAssets.player.jumpingLeft
+
+playerSprite gameAssets { walk: NotWalking, jump: Falling } = gameAssets.player.falling
 
 playerSprite gameAssets _ = gameAssets.player.standing
 
